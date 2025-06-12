@@ -9,37 +9,141 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.ApplicationServices;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Uno_Solar_Design_Assist_Pro
 {
     public class Mesh_Creation : ICommand
     {
+        public event EventHandler CanExecuteChanged;
+        ObjectId squareId;
         ObjectId blockId;
         Point3d upperRight;
         Point3d lowerLeft;
-        List<ObjectId> contourIds = new List<ObjectId>();
         ObjectId polylineId;
-        char Mesh_Dencity_Type;
-         
+        public static HashSet<string> polyline3dLayers = new HashSet<string>();
+        public static HashSet<ObjectId> selectedPolyline3dIds = new HashSet<ObjectId>();
+        public static List<double> percnt = new List<double>();
+
+        public static int Lgreen = 0;
+        public static int Yellow = 0;
+        public static int Red = 0;
+        public static int Green = 0;
+        public static int totalFaces = 0;
+
+        public static Dictionary<Color, int> colorCounts = new Dictionary<Color, int>();
+        public bool CanExecute(object parameter)
+        {
+            return true;
+        }
+
         public void Execute(object parameter)
         {
             Terrain_Mesh mesh = new Terrain_Mesh();
-            mesh.ShowDialog();
+            Application.ShowModelessDialog(Application.MainWindow.Handle, mesh, false);
+      
 
             if(mesh.DialogResult != DialogResult.OK)
             {
                 return;
             }
-            
-            Mesh_Dencity_Type = mesh.Mesh_Dencity;
+        }
+        public void selectContours()
+        {
 
-            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
             Database db = doc.Database;
             Editor ed = doc.Editor;
 
+            bool continueSelecting = true;
+
+            while (continueSelecting)
+            {
+                // === 1. User Selection ===
+                SelectionFilter filter = new SelectionFilter(new TypedValue[]
+                {
+                new TypedValue((int)DxfCode.Start, "POLYLINE")
+                });
+
+                PromptSelectionOptions pso = new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect 3D Polylines: ",
+                    MessageForRemoval = "\nRemove selection: "
+                };
+                HashSet<ObjectId> highlightedIds = new HashSet<ObjectId>();
+                while (true)
+                {
+
+                    PromptEntityOptions peo = new PromptEntityOptions("\nSelect a 3D Polyline (Enter to exit): ");
+                    peo.SetRejectMessage("\nOnly 3D Polylines allowed.");
+                    peo.AddAllowedClass(typeof(Polyline3d), exactMatch: false);
+
+                    PromptEntityResult per = ed.GetEntity(peo);
+
+                    if (per.Status == PromptStatus.Cancel || per.Status == PromptStatus.None)
+                    {
+                        ed.WriteMessage("\nCommand ended.");
+                        break;
+                    }
+                    using (doc.LockDocument())
+                    using (Transaction tr = db.TransactionManager.StartTransaction())
+                    {
+                        Polyline3d selectedPolyline = tr.GetObject(per.ObjectId, OpenMode.ForRead) as Polyline3d;
+
+                        if (selectedPolyline != null)
+                        {
+                            string targetLayer = selectedPolyline.Layer;
+
+                            BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                            BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+
+                            foreach (ObjectId objId in btr)
+                            {
+                                if (!highlightedIds.Contains(objId))
+                                {
+                                    Entity ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
+                                    if (ent is Polyline3d poly && poly.Layer == targetLayer)
+                                    {
+                                        ent.UpgradeOpen();
+                                        ent.Highlight();
+                                        highlightedIds.Add(objId);
+                                        polyline3dLayers.Add(ent.Layer);
+                                        selectedPolyline3dIds.Add(ent.ObjectId);
+                                    }
+                                }
+                            }
+                        }
+
+                        tr.Commit();
+                    }
+                }
+                // === 3. Ask user to confirm or continue selecting ===
+                PromptKeywordOptions confirmOptions = new PromptKeywordOptions("\nAre you satisfied with the highlighted selection?")
+                {
+                    AllowNone = false
+                };
+                confirmOptions.Keywords.Add("Yes");
+                confirmOptions.Keywords.Add("No");
+                confirmOptions.Keywords.Default = "Yes";
+
+                PromptResult confirmResult = ed.GetKeywords(confirmOptions);
+                continueSelecting = confirmResult.Status == PromptStatus.OK && confirmResult.StringResult == "No";
+            }
+            sqre();
+            // doc.SendStringToExecute("sqre\n", true, false, true);
+        }
+        public void sqre()
+        {
+            Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+            Database db = doc.Database;
+            Editor ed = doc.Editor;
+            Point3d centroid;
+
+
             PromptEntityOptions polylineOptions = new PromptEntityOptions("\nSelect a closed polyline:");
             polylineOptions.SetRejectMessage("\nSelected entity must be a polyline.");
-            polylineOptions.AddAllowedClass(typeof(Polyline), true);
+            polylineOptions.AddAllowedClass(typeof(Autodesk.AutoCAD.DatabaseServices.Polyline), true);
             PromptEntityResult polylineResult = ed.GetEntity(polylineOptions);
 
             if (polylineResult.Status != PromptStatus.OK)
@@ -47,107 +151,94 @@ namespace Uno_Solar_Design_Assist_Pro
 
             polylineId = polylineResult.ObjectId;
 
-            using (DocumentLock docklock = doc.LockDocument())
+            using (Transaction tx = db.TransactionManager.StartTransaction())
             {
-                using (Transaction tx = db.TransactionManager.StartTransaction())
+
+                Autodesk.AutoCAD.DatabaseServices.Polyline pl = tx.GetObject(polylineResult.ObjectId, OpenMode.ForRead) as Polyline;
+
+                if (pl == null || !pl.Closed)
                 {
-
-                    Polyline pl = tx.GetObject(polylineResult.ObjectId, OpenMode.ForRead) as Polyline;
-
-                    if (pl == null || !pl.Closed)
-                    {
-                        ed.WriteMessage("\nThe selected polyline must be closed.");
-                        return;
-                    }
-                    Point3d centroid = GetPolylineCentroid(pl);
-
-                    Circle circle = new Circle(centroid, Vector3d.ZAxis, 5);
-                    circle.Color = Color.FromColorIndex(ColorMethod.ByAci, 2);
-
-                    BlockTableRecord btrr = (BlockTableRecord)tx.GetObject(db.CurrentSpaceId, OpenMode.ForWrite);
-                    btrr.AppendEntity(circle);
-                    tx.AddNewlyCreatedDBObject(circle, true);
-                    tx.Commit();
+                    ed.WriteMessage("\nThe selected polyline must be closed.");
+                    return;
                 }
+                centroid = GetPolylineCentroid(pl);
 
-                using (Transaction tr = db.TransactionManager.StartTransaction())
+                tx.Commit();
+            }
+            using (doc.LockDocument())
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                Entity entity1 = tr.GetObject(polylineId, OpenMode.ForRead) as Entity;
+                if (entity1.Layer != "BOUNDARY")
                 {
-                    Entity entity1 = tr.GetObject(polylineId, OpenMode.ForRead) as Entity;
-                    if (entity1.Layer.ToLower() != "boundary")
+                    System.Windows.MessageBox.Show("Please Select Boundry Layer outer Polyline");
+                    return;
+                }
+                else
+                {
+
+
+                    BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                    if (!bt.Has("SquareBlock"))
                     {
-                        MessageBox.Show("Please Select Boundry Layer outer Polyline");
-                        return;
+                        BlockTableRecord btr = new BlockTableRecord
+                        {
+                            Name = "SquareBlock"
+                        };
+
+                        // Define a square
+                        Polyline square = new Polyline(4);
+                        square.AddVertexAt(0, new Point2d(-750, -750), 0, 0, 0);
+                        square.AddVertexAt(1, new Point2d(750, -750), 0, 0, 0);
+                        square.AddVertexAt(2, new Point2d(750, 750), 0, 0, 0);
+                        square.AddVertexAt(3, new Point2d(-750, 750), 0, 0, 0);
+                        square.Closed = true;
+
+                        btr.AppendEntity(square);
+
+                        //ObjectId squareId = tr.AddNewlyCreatedDBObject(square, true);
+                        //squareId = btr.AppendEntity(square);
+                        //tr.AddNewlyCreatedDBObject(square, true);
+
+
+                        bt.UpgradeOpen();
+                        bt.Add(btr);
+                        tr.AddNewlyCreatedDBObject(btr, true);
                     }
-                    else
+                    double elevation = 0;
+                    if (entity1 is Polyline poly)
                     {
-                        BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-                        if (!bt.Has("SquareBlock"))
-                        {
-                            BlockTableRecord btr = new BlockTableRecord
-                            {
-                                Name = "SquareBlock"
-                            };
-
-                            // Define a square
-                            Polyline square = new Polyline(4);
-                            square.AddVertexAt(0, new Point2d(-750, -750), 0, 0, 0);
-                            square.AddVertexAt(1, new Point2d(750, -750), 0, 0, 0);
-                            square.AddVertexAt(2, new Point2d(750, 750), 0, 0, 0);
-                            square.AddVertexAt(3, new Point2d(-750, 750), 0, 0, 0);
-                            square.Closed = true;
-
-                            btr.AppendEntity(square);
-
-                            bt.UpgradeOpen();
-                            bt.Add(btr);
-                            tr.AddNewlyCreatedDBObject(btr, true);
-                        }
-                        // Ask user to select a point to place the block
-                        PromptPointResult ppr = ed.GetPoint("\nSelect a point inside the circle to place the block: ");
-                        if (ppr.Status != PromptStatus.OK)
-                            return;
-
-                        BlockTable bt1 = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-                        BlockTableRecord btr1 = (BlockTableRecord)tr.GetObject(bt1[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
-
-                        BlockReference br = new BlockReference(ppr.Value, bt1["SquareBlock"]);
-                        btr1.AppendEntity(br);
-                        tr.AddNewlyCreatedDBObject(br, true);
-                        blockId = br.ObjectId;
-                        Extents3d extents = br.GeometricExtents;
-
-                        // Access the lower-left corner
-                        lowerLeft = extents.MinPoint;
-
-                        // Access the upper-right corner
-                        upperRight = extents.MaxPoint;
-
-                        ObjectId lastCircleId = ObjectId.Null;
-                        foreach (ObjectId objId in btr1)
-                        {
-                            Entity ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
-                            if (ent is Circle)
-                            {
-                                lastCircleId = objId; // Store last found circle
-                            }
-                        }
-
-                        // If a circle was found, delete it
-                        if (lastCircleId != ObjectId.Null)
-                        {
-                            Entity lastCircle = tr.GetObject(lastCircleId, OpenMode.ForWrite) as Entity;
-                            lastCircle.Erase();
-                            ed.WriteMessage("\nLast created circle removed.");
-                        }
-                        tr.Commit();
-                        Create_Mesh();
-                        //doc.SendStringToExecute("CREATEMESH\n", true, false, true);
+                        elevation = poly.Elevation;
                     }
+
+                    Point3d insertPoint = new Point3d(centroid.X, centroid.Y, elevation);
+
+                    BlockTable bt1 = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                    BlockTableRecord btr1 = (BlockTableRecord)tr.GetObject(bt1[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+
+                    BlockReference br = new BlockReference(insertPoint, bt1["SquareBlock"]);
+                    btr1.AppendEntity(br);
+                    tr.AddNewlyCreatedDBObject(br, true);
+                    blockId = br.ObjectId;
+                    Extents3d extents = br.GeometricExtents;
+
+                    // Access the lower-left corner
+                    lowerLeft = extents.MinPoint;
+
+                    // Access the upper-right corner
+                    upperRight = extents.MaxPoint;
+
+                    //Entity entity = tr.GetObject(blockId, OpenMode.ForRead) as Entity;
+                    //entity.Erase();
+                    tr.Commit();
+
+                    // doc.SendStringToExecute("CREATEMESH\n", true, false, true);
+                    createmesh();
                 }
             }
         }
 
-        private Point3d GetPolylineCentroid(Polyline pl)
+        private Point3d GetPolylineCentroid(Autodesk.AutoCAD.DatabaseServices.Polyline pl)
         {
             double sumX = 0, sumY = 0;
             int numVerts = pl.NumberOfVertices;
@@ -161,73 +252,57 @@ namespace Uno_Solar_Design_Assist_Pro
 
             return new Point3d(sumX / numVerts, sumY / numVerts, 0);
         }
-                
-        public void Create_Mesh()
+        public async void createmesh()
         {
+            int compactness = 0;
+            if (Terrain_Mesh.Mesh_Dencity == 's')
+            {
+                compactness = 500;
+            }
+            else if (Terrain_Mesh.Mesh_Dencity == 'M')
+            {
+                compactness = 300;
+            }
+            else
+            {
+                compactness = 200;
+            }
             Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
             Database db = doc.Database;
             Editor ed = doc.Editor;
-
-            Point3d minPoint = new Point3d(double.MaxValue, double.MaxValue, 0);
-            Point3d maxPoint = new Point3d(double.MinValue, double.MinValue, 0);
-            List<double> Zaxis = new List<double>();
-            int Triangle_size = 200;
-
-            if(Mesh_Dencity_Type.Equals('S'))
-            {
-                Triangle_size = 200;
-            }
-            else if(Mesh_Dencity_Type.Equals('M'))
-            {
-                Triangle_size = 300;
-            }
-            else if(Mesh_Dencity_Type.Equals('L'))
-            {
-                Triangle_size = 500;
-            }
-
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
-                BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-                BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
 
-                foreach (ObjectId objId in btr)
-                {
-                    Entity entity = tr.GetObject(objId, OpenMode.ForRead) as Entity;
-                    if (entity is Polyline3d polyline3D || entity is Polyline polyline)
-                    {
-                        contourIds.Add(objId);
-
-                    }
-                }
-                if (contourIds.Count > 0)
+                if (selectedPolyline3dIds.Count > 0)
                 {
                     string lowerLeftStr = $"{lowerLeft.X},{lowerLeft.Y}";
                     string upperRightStr = $"{upperRight.X},{upperRight.Y}";
 
+
                     doc.SendStringToExecute("DRAPE\n", true, false, true);
-                    ed.SetImpliedSelection(contourIds.ToArray());
+                    ed.SetImpliedSelection(selectedPolyline3dIds.ToArray());
                     SelectionSet sset = ed.SelectImplied().Value;
                     ed.SetImpliedSelection(sset.GetObjectIds());
                     doc.SendStringToExecute("N\n", true, false, true);
                     doc.SendStringToExecute("Y\n", true, false, true);
                     doc.SendStringToExecute($"{lowerLeftStr}\n", true, false, true);
                     doc.SendStringToExecute($"{upperRightStr}\n", true, false, true);
-                    doc.SendStringToExecute($"{Triangle_size}\n", true, false, true);
+                    doc.SendStringToExecute($"{compactness}\n", true, false, true);
                     doc.SendStringToExecute("\n", true, false, true);
                     doc.SendStringToExecute("\n", true, false, true);
+                    await Task.Delay(200);
+
                 }
                 else
                 {
                     ed.WriteMessage("\nNo 3D contour polylines found.");
                 }
-                Explode_Mesh();
-                //doc.SendStringToExecute("COLAP\n", true, false, true);
                 tr.Commit();
+                colap();
+
             }
         }
-                
-        public void Explode_Mesh()
+        public async void colap()
         {
             Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
             Database db = doc.Database;
@@ -256,8 +331,10 @@ namespace Uno_Solar_Design_Assist_Pro
             }
             if (blockIds.Count > 0)
             {
+                using (doc.LockDocument())
                 using (Transaction tr = doc.TransactionManager.StartTransaction())
                 {
+
                     ObjectId objid = blockIds[0];
                     Autodesk.AutoCAD.DatabaseServices.Curve Selected_Obj = (Curve)tr.GetObject(objid, OpenMode.ForWrite);
 
@@ -299,9 +376,11 @@ namespace Uno_Solar_Design_Assist_Pro
                             blockref.Erase();
                         }
                     }
-                    RemoveEntitiesOutsidePolyline();
+                    await Task.Delay(200);
                     //doc.SendStringToExecute("REMOVEMESH\n", true, false, false);
                     tr.Commit();
+                    Removemesh();
+
                 }
             }
             else
@@ -309,14 +388,13 @@ namespace Uno_Solar_Design_Assist_Pro
                 ed.WriteMessage("\nNo blocks found on the specified layer.");
             }
         }
-                
-        public void RemoveEntitiesOutsidePolyline()
+        public void Removemesh()
         {
             Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
             Database db = doc.Database;
             Editor ed = doc.Editor;
 
-
+            using (doc.LockDocument())
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
                 BlockTable bt = tr.GetObject(db.BlockTableId, OpenMode.ForWrite) as BlockTable;
@@ -387,15 +465,8 @@ namespace Uno_Solar_Design_Assist_Pro
                                 removedCount++;
                             }
                         }
-
                     }
-
-                    // Commit the transaction
-                    doc.SendStringToExecute("Slope\n", true, false, false);
                     tr.Commit();
-                    ed.WriteMessage($"\n{removedCount} entities were removed.");
-
-
                 }
             }
             catch (System.Exception ex)
@@ -403,7 +474,7 @@ namespace Uno_Solar_Design_Assist_Pro
                 ed.WriteMessage("\nError: " + ex.Message);
             }
 
-            string[] layerNames = { "Dark_Green", "Light_Green", "Yellow", "Red" };
+            string[] layerNames = { "UnoTEAM_TOPOGRAPHY MESH" };
             short colorIndex = 1;
 
             using (Transaction tr = db.TransactionManager.StartTransaction())
@@ -469,6 +540,38 @@ namespace Uno_Solar_Design_Assist_Pro
                 // Commit the transaction
                 tr.Commit();
             }
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                // Access the BlockTableRecord where entities are stored
+                BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+
+                int i = 0;
+                // Loop through the entities in the BlockTableRecord
+                foreach (ObjectId objId in btr)
+                {
+                    Entity ent = (Entity)tr.GetObject(objId, OpenMode.ForRead);
+
+                    // Check if the entity matches the properties
+                    if (ent is Line line && ent.Layer == "A-Area-Mass" && ent.Linetype == "HIDDEN2" && ent.Color.ColorIndex == 11)
+                    {
+                        i++;
+                        // Upgrade the entity to writable and erase it
+                        ent.UpgradeOpen();
+                        ent.Erase();
+                        if (i == 5)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                // Commit the transaction
+                tr.Commit();
+            }
+
+            TerrainSlopeCalculator c = new TerrainSlopeCalculator();
+            c.CalculateFaceSlope();
         }
         private bool IsPointInsidePolyline1(Polyline polyline, Point3d point)
         {
@@ -494,30 +597,22 @@ namespace Uno_Solar_Design_Assist_Pro
 
             return isInside;
         }
-
         public class TerrainSlopeCalculator
         {
-            public static int Lgreen = 0;
-            public static int Yellow = 0;
-            public static int Red = 0;
-            public static int Green = 0;
-            public static int totalFaces = 0;
-
-            [CommandMethod("Slope")]
             public void CalculateFaceSlope()
             {
 
                 Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
                 Editor ed = doc.Editor;
                 Database db = doc.Database;
-
+                using (doc.LockDocument())
                 using (Transaction tr = db.TransactionManager.StartTransaction())
                 {
-                    BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-                    BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+                    BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForWrite);
+                    BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
 
                     List<Triangle> triangles = new List<Triangle>();
-
+                    colorCounts.Clear();
                     // Iterate over all entities in Model Space
                     foreach (ObjectId objId in btr)
                     {
@@ -528,40 +623,130 @@ namespace Uno_Solar_Design_Assist_Pro
                         {
 
                             entity.LineWeight = LineWeight.LineWeight030;
-                            // Extract the vertices of the 3DFace
                             Point3d v1 = face.GetVertexAt(0);
                             Point3d v2 = face.GetVertexAt(1);
                             Point3d v3 = face.GetVertexAt(2);
 
-                            // If the face is not degenerate, create a triangle
                             if (v1 != v2 && v1 != v3 && v2 != v3)
                             {
-                                Triangle tri = new Triangle(v1, v2, v3); // Create triangle object
+                                Triangle tri = new Triangle(v1, v2, v3);
                                 triangles.Add(tri);
 
                                 double slope = tri.CalculateSlope();
                                 tri.ApplyColor(slope, tr, objId);
-
                             }
                         }
                     }
 
-                    double lightGreenPercent = (Green / (double)totalFaces) * 100;
-                    double cyanPercent = (Lgreen / (double)totalFaces) * 100;
-                    double lightBrownPercent = (Yellow / (double)totalFaces) * 100;
-                    double greenPercent = (Red / (double)totalFaces) * 100;
 
-                    string message = "DarkGreen : " + lightGreenPercent.ToString() + "\n" +
-                     "Light Green : " + cyanPercent.ToString() + "\n" +
-                     "Yellow : " + lightBrownPercent.ToString() + "\n" +
-                     "Red : " + greenPercent.ToString();
+                    string report = $"Total Faces: {totalFaces}\n\n";
 
-                    MessageBox.Show(message);
+                    foreach (var pair in colorCounts)
+                    {
+                        string colorName = GetColorNameFromRGB(pair.Key);
+                        double percentage = (double)pair.Value / totalFaces * 100;
+                        percnt.Add(percentage);
+                    }
+
                     tr.Commit();
                 }
-            }
-        }
+                string sourceLayer = "A-Area-Mass";
+                string targetLayer = "UnoTEAM_TOPOGRAPHY MESH";
 
+                using (Transaction tr = db.TransactionManager.StartTransaction())
+                {
+                    LayerTable lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
+
+                    if (!lt.Has(sourceLayer) || !lt.Has(targetLayer))
+                    {
+                        ed.WriteMessage("\nOne or both layers not found.");
+                        return;
+                    }
+
+                    ObjectId sourceLayerId = lt[sourceLayer];
+                    ObjectId targetLayerId = lt[targetLayer];
+
+                    BlockTableRecord btr = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
+
+                    foreach (ObjectId objId in btr)
+                    {
+                        Entity ent = tr.GetObject(objId, OpenMode.ForWrite) as Entity;
+                        if (ent != null && ent.Layer == sourceLayer)
+                        {
+                            // Preserve the color visually if it's ByLayer
+                            if (ent.Color.ColorMethod == Autodesk.AutoCAD.Colors.ColorMethod.ByLayer)
+                            {
+                                LayerTableRecord sourceLayerRec = (LayerTableRecord)tr.GetObject(sourceLayerId, OpenMode.ForRead);
+                                ent.Color = sourceLayerRec.Color; // Apply actual color
+                            }
+
+                            ent.Layer = targetLayer;
+                        }
+                    }
+
+                    // Optional: Delete the source layer after merging
+                    try
+                    {
+                        LayerTableRecord layerToDelete = (LayerTableRecord)tr.GetObject(sourceLayerId, OpenMode.ForWrite);
+                        if (!layerToDelete.IsErased && !layerToDelete.IsDependent)
+                        {
+                            layerToDelete.Erase(true);
+                        }
+                    }
+                    catch
+                    {
+                        ed.WriteMessage("\nCould not delete the source layer. It may still be in use.");
+                    }
+
+                    tr.Commit();
+                    ed.WriteMessage("\nLayer merge complete.");
+                }
+            }
+
+            string GetColorNameFromRGB(Color color)
+            {
+                var knownColors = new Dictionary<string, (int R, int G, int B)>
+                {
+                    { "Dark Green", (0, 128, 0) },
+                    { "Green", (85, 170, 0) },
+                    { "Lime Green", (171, 213, 0) },
+                    { "Bright Yellow", (255, 254, 0) },
+                    { "Yellow Orange", (255, 223, 0) },
+                    { "Golden Yellow", (255, 193, 0) },
+                    { "Orange", (255, 161, 0) },
+                    { "Orange Red", (255, 107, 0) },
+                    { "Red Orange", (255, 53, 0) },
+                    { "Red", (255, 0, 0) }
+                };
+
+                int r = color.Red;
+                int g = color.Green;
+                int b = color.Blue;
+
+                string closestName = $"RGB({r},{g},{b})";
+                int minDist = int.MaxValue;
+
+                foreach (var kvp in knownColors)
+                {
+                    int dr = r - kvp.Value.R;
+                    int dg = g - kvp.Value.G;
+                    int db = b - kvp.Value.B;
+                    int dist = dr * dr + dg * dg + db * db;
+
+                    if (dist < minDist)
+                    {
+                        minDist = dist;
+                        closestName = kvp.Key;
+                    }
+                }
+
+                if (minDist > 900)
+                    return $"RGB({r},{g},{b})";
+
+                return closestName;
+            }
+
+        }
         public class Triangle
         {
             public Point3d P1, P2, P3;
@@ -589,73 +774,33 @@ namespace Uno_Solar_Design_Assist_Pro
 
             internal void ApplyColor(double slope, Transaction tr, ObjectId objId)
             {
-                Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
-                Editor ed = doc.Editor;
-                Database db = doc.Database;
 
-                Autodesk.AutoCAD.Colors.Color faceColor;
-                bool a = false;
-                bool b = false;
-                bool c = false;
-                bool d = false;
-                if (slope >= 0 && slope <= 3)
-                {
-                    faceColor = Autodesk.AutoCAD.Colors.Color.FromRgb(34, 139, 34);
-                    TerrainSlopeCalculator.Green++;
-                    a = true;
-                }
-                else if (slope > 3 && slope <= 5)
-                {
-                    faceColor = Autodesk.AutoCAD.Colors.Color.FromRgb(0, 255, 0);
-                    TerrainSlopeCalculator.Lgreen++;
-                    b = true;
-                }
-                else if (slope > 5 && slope <= 10)
-                {
-                    faceColor = Autodesk.AutoCAD.Colors.Color.FromRgb(255, 255, 0);
-                    TerrainSlopeCalculator.Yellow++;
-                    c = true;
-                }
-                else
-                {
-                    faceColor = Autodesk.AutoCAD.Colors.Color.FromRgb(255, 0, 0);
-                    TerrainSlopeCalculator.Red++;
-                    d = true;
-                }
-                TerrainSlopeCalculator.totalFaces++;
-                // Open the entity for writing
-                Entity entity = tr.GetObject(objId, OpenMode.ForWrite) as Entity;
-                if (entity != null)
-                {
-                    LayerTable lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
+                Autodesk.AutoCAD.Colors.Color faceColor = Autodesk.AutoCAD.Colors.Color.FromRgb(128, 128, 128); // Default gray
 
-                    entity.Color = faceColor;
-                    if (a == true)
+                for (int i = 0; i < Terrain_Mesh.angleMinList.Count; i++)
+                {
+                    if (slope >= Terrain_Mesh.angleMinList[i] && slope <= Terrain_Mesh.angleMaxList[i])
                     {
-                        entity.Layer = "Dark_Green";
-                    }
-                    else if (b == true)
-                    {
-                        entity.Layer = "Light_Green";
-                    }
-                    else if (c == true)
-                    {
-                        entity.Layer = "Yellow";
-                    }
-                    else if (d == true)
-                    {
-                        entity.Layer = "Red";
-                    }
+                        System.Drawing.Color color = Terrain_Mesh.colorList[i];
+                        faceColor = Autodesk.AutoCAD.Colors.Color.FromRgb(color.R, color.G, color.B);
+                        if (!colorCounts.ContainsKey(faceColor))
+                            colorCounts[faceColor] = 1;
+                        else
+                            colorCounts[faceColor]++;
+                        totalFaces++;
 
+                        Entity ent = tr.GetObject(objId, OpenMode.ForWrite) as Entity;
+                        if (ent != null)
+                        {
+                            ent.Color = faceColor;
+                        }
+                        break;
+                    }
                 }
             }
         }
 
-        public bool CanExecute(object parameter)
-        {
-            return true;
-        }
 
-        public event EventHandler CanExecuteChanged;
+
     }
 }

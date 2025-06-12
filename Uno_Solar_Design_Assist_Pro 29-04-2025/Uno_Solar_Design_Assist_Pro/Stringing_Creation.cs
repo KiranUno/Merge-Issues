@@ -7,6 +7,7 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.ApplicationServices;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
+using Autodesk.AutoCAD.Colors;
 
 namespace Uno_Solar_Design_Assist_Pro
 {
@@ -35,7 +36,43 @@ namespace Uno_Solar_Design_Assist_Pro
             //{
             //    return;
             //}
+            Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+            Database db = doc.Database;
+            using (DocumentLock docklock = doc.LockDocument())
+            {
+                using (Transaction tr = doc.TransactionManager.StartTransaction())
+                {
+                    string layerName = "UnoTEAM_STRINGING";
+                    short lineWeight = (short)LineWeight.LineWeight000; // example
+                    Color layerColor = Color.FromRgb(0, 165, 0); // Red as example
 
+                    LayerTable layerTable = tr.GetObject(db.LayerTableId, OpenMode.ForRead) as LayerTable;
+                    ObjectId layerId;
+
+                    if (layerTable.Has(layerName))
+                    {
+                        db.Clayer = layerTable[layerName];
+                    }
+                    else
+                    {
+                        layerTable.UpgradeOpen();
+
+                        LayerTableRecord newLayer = new LayerTableRecord
+                        {
+                            Name = layerName,
+                            Color = layerColor,
+                            LineWeight = (LineWeight)lineWeight,
+                            LinetypeObjectId = db.ContinuousLinetype
+                        };
+
+                        layerId = layerTable.Add(newLayer);
+                        tr.AddNewlyCreatedDBObject(newLayer, true);
+                    }
+                    db.Clayer = layerTable[layerName];
+                    tr.Commit();
+                }
+            }
+            
             if (Global_Module.Stringing_Category == "SINGLE ROW")
             {
                 Map_SingleRow_Stringing(Global_Module.Stringing_Type);
