@@ -20,10 +20,26 @@ namespace Uno_Solar_Design_Assist_Pro
             {
                 // Get the RibbonControl
                 Autodesk.Windows.RibbonControl rbncntrl = ComponentManager.Ribbon;
+                RibbonTab rbntab = null;
 
-                RibbonTab rbntab = new RibbonTab();                 // Create a new RibbonTab                
-                rbntab.Title = "UNO Tool";
-                rbncntrl.Tabs.Add(rbntab);                          // Add the RibbonTab to the RibbonControl
+                // Check if tab already exists
+                foreach (RibbonTab tab in rbncntrl.Tabs)
+                {
+                    if (tab.Title == "UNO Tool")
+                    {
+                        rbntab = tab;
+                        break;
+                    }
+                }
+                // If tab doesn't exist, create and add it
+                if (rbntab == null)
+                {
+                    rbntab = new RibbonTab();                        // Create a new RibbonTab                
+                    rbntab.Title = "UNO Tool";
+                    rbntab.Id = "UNOTool_Tab";
+                    
+                    rbncntrl.Tabs.Add(rbntab);                      // Add the RibbonTab to the RibbonControl
+                }
 
                 // Create a new RibbonPanel
                 RibbonPanelSource rbnpnlsrc = new RibbonPanelSource();
@@ -48,7 +64,7 @@ namespace Uno_Solar_Design_Assist_Pro
                 Autodesk.Windows.RibbonButton button1 = new Autodesk.Windows.RibbonButton();
                 button1.Text = "\n\n Roads Placement \n\n";
                 button1.ShowText = true;
-                button1.CommandHandler = new Roads_Placement();    // Add a click event handler for the button
+                button1.CommandHandler = new Extents();    // Add a click event handler for the button
                 rbnpnlsrc.Items.Add(button1);                       // Add the RibbonButton to the RibbonPanel
                 rbnpnlsrc.Items.Add(separator);
 
@@ -142,6 +158,14 @@ namespace Uno_Solar_Design_Assist_Pro
                 button13.ShowText = true;
                 button13.CommandHandler = new Cable_Info_Export();
                 rbnpnlsrc.Items.Add(button13);
+                rbnpnlsrc.Items.Add(separator);
+
+
+                RibbonButton button14 = new RibbonButton();
+                button14.Text = "\n\n Shadow Analysis \n\n";
+                button14.ShowText = true;
+                button14.CommandHandler = new Shadow_Analysis();
+                rbnpnlsrc.Items.Add(button14);
                 rbnpnlsrc.Items.Add(separator);
             }
             catch (System.Exception ex)
