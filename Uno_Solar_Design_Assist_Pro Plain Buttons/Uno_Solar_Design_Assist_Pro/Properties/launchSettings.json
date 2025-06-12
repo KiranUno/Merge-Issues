@@ -1,9 +1,0 @@
-{
-  "profiles": {
-    "Uno_Solar_Design_Assist_Pro": {
-      "commandName": "Executable",
-      "executablePath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\acad.exe",
-      "commandLineArgs": "\"/regserver\""
-    }
-  }
-}
