@@ -38,7 +38,11 @@ namespace Uno_Solar_Design_Assist_Pro
                     rbntab = new RibbonTab();                        // Create a new RibbonTab                
                     rbntab.Title = "UNO Tool";
                     rbntab.Id = "UNOTool_Tab";
+<<<<<<< HEAD
 
+=======
+                    
+>>>>>>> 0e709fa9cd4047a53cdd46ff7a602c71577f67ba
                     rbncntrl.Tabs.Add(rbntab);                      // Add the RibbonTab to the RibbonControl
                 }
 
@@ -161,6 +165,7 @@ namespace Uno_Solar_Design_Assist_Pro
                 rbnpnlsrc.Items.Add(button13);
                 rbnpnlsrc.Items.Add(separator);
 
+<<<<<<< HEAD
                 RibbonButton button14 = new RibbonButton();
                 button14.Text = "Grounding";
                 button14.ShowText = true;
@@ -190,6 +195,15 @@ namespace Uno_Solar_Design_Assist_Pro
                 rbnpnlsrc.Items.Add(separator);
 
 
+=======
+
+                RibbonButton button14 = new RibbonButton();
+                button14.Text = "\n\n Shadow Analysis \n\n";
+                button14.ShowText = true;
+                button14.CommandHandler = new Shadow_Analysis();
+                rbnpnlsrc.Items.Add(button14);
+                rbnpnlsrc.Items.Add(separator);
+>>>>>>> 0e709fa9cd4047a53cdd46ff7a602c71577f67ba
             }
             catch (System.Exception ex)
             {
