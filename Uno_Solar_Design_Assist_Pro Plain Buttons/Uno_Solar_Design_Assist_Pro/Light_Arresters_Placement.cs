@@ -1,47 +1,85 @@
-﻿using System;
-using System.Windows.Input;
-using Autodesk.AutoCAD.Geometry;
-using System.Collections.Generic;
-using Autodesk.AutoCAD.EditorInput;
+﻿using Autodesk.AutoCAD.ApplicationServices;
+using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
-using Autodesk.AutoCAD.ApplicationServices;
+using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
+using Autodesk.AutoCAD.Runtime;
+using System;
+using System.Collections.Generic;
+using System.Windows.Input;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace Uno_Solar_Design_Assist_Pro
 {
     internal class Light_Arresters_Placement : ICommand
     {
-        private const double CircleRadius = 107;
-        private const double GridSpacing = CircleRadius * 2 / 1.532; // Hexagonal spacing
-        private const double CircleBlockSpacing = 160; // Circle block center-to-center distance
-        
+        public event EventHandler CanExecuteChanged;
+
+        public bool CanExecute(object parameter) => true;
+
+        [CommandMethod("LA")]
         public void Execute(object parameter)
         {
             Document doc = Application.DocumentManager.MdiActiveDocument;
             Database db = doc.Database;
             Editor ed = doc.Editor;
 
+            using (DocumentLock docLock = doc.LockDocument())
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
-                // Prompt user to select a boundary polyline
+                // Create or set layer
+                string layerName = "UnoTEAM_LIGHTNING ARRESTER";
+                // short lineWeight = (short)LineWeight.LineWeight030;
+                Color layerColor = Color.FromRgb(255, 0, 0); // Red
+
+                LayerTable layerTable = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
+
+                if (!layerTable.Has(layerName))
+                {
+                    layerTable.UpgradeOpen();
+
+                    LayerTableRecord newLayer = new LayerTableRecord
+                    {
+                        Name = layerName,
+                        Color = layerColor,
+                        //  LineWeight = (LineWeight)lineWeight,
+                        LinetypeObjectId = db.ContinuousLinetype
+                    };
+
+                    layerTable.Add(newLayer);
+                    tr.AddNewlyCreatedDBObject(newLayer, true);
+                }
+
+                db.Clayer = layerTable[layerName];
+
+                // Prompt user to select boundary polyline
                 PromptEntityOptions peo = new PromptEntityOptions("\nSelect inner boundary polyline: ");
                 peo.SetRejectMessage("\nOnly polylines are allowed.");
                 peo.AddAllowedClass(typeof(Polyline), true);
 
                 PromptEntityResult per = ed.GetEntity(peo);
-                if (per.Status != PromptStatus.OK) return;
+                if (per.Status != PromptStatus.OK)
+                {
+                    tr.Abort();
+                    return;
+                }
 
                 Polyline boundary = tr.GetObject(per.ObjectId, OpenMode.ForRead) as Polyline;
-                if (boundary == null) return;
+                if (boundary == null)
+                {
+                    tr.Abort();
+                    return;
+                }
 
-                // Get the bounding box or use vertex points to define a square
+                // Get bounding box
                 Extents3d ext = boundary.GeometricExtents;
                 Point3d minPt = ext.MinPoint;
                 Point3d maxPt = ext.MaxPoint;
 
-                // Generate circle centers within the square
+                const double CircleRadius = 107;
+                const double CircleBlockSpacing = 160;
                 List<Point3d> circleCenters = new List<Point3d>();
-                double dx = CircleBlockSpacing; // Adjusted distance
+                double dx = CircleBlockSpacing;
                 double dy = CircleBlockSpacing;
                 bool shiftRow = false;
 
@@ -58,14 +96,22 @@ namespace Uno_Solar_Design_Assist_Pro
                     shiftRow = !shiftRow;
                 }
 
-                // Create a block for the circles
-                ObjectId blockId = CreateCircleBlock(db, tr);
-                BlockTableRecord btr = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForWrite);
+                // Create block definition
+                ObjectId blockId = CreateCircleBlockSafe(db, CircleRadius);
+                if (blockId == ObjectId.Null)
+                {
+                    ed.WriteMessage("\nFailed to create block definition.");
+                    tr.Abort();
+                    return;
+                }
+
+                // Insert blocks
+                BlockTableRecord currentSpace = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForWrite);
 
                 foreach (Point3d center in circleCenters)
                 {
                     BlockReference blockRef = new BlockReference(center, blockId);
-                    btr.AppendEntity(blockRef);
+                    currentSpace.AppendEntity(blockRef);
                     tr.AddNewlyCreatedDBObject(blockRef, true);
                 }
 
@@ -73,20 +119,34 @@ namespace Uno_Solar_Design_Assist_Pro
             }
         }
 
-        private static ObjectId CreateCircleBlock(Database db, Transaction tr)
+        private static ObjectId CreateCircleBlockSafe(Database db, double radius)
         {
-            BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForWrite);
-            BlockTableRecord btr = new BlockTableRecord
+            ObjectId blockId = ObjectId.Null;
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
             {
-                Name = "CircleBlock_" + DateTime.Now.Ticks
-            };
+                BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForWrite);
+                string blockName = "CircleBlock_" + DateTime.Now.Ticks;
 
-            Circle circle = new Circle(Point3d.Origin, Vector3d.ZAxis, CircleRadius);
-            btr.AppendEntity(circle);
-            ObjectId btrId = bt.Add(btr);
-            tr.AddNewlyCreatedDBObject(btr, true);
+                if (bt.Has(blockName))
+                {
+                    blockId = bt[blockName];
+                }
+                else
+                {
+                    BlockTableRecord btr = new BlockTableRecord { Name = blockName };
+                    Circle circle = new Circle(Point3d.Origin, Vector3d.ZAxis, radius);
+                    btr.AppendEntity(circle);
 
-            return btrId;
+                    bt.Add(btr);
+                    tr.AddNewlyCreatedDBObject(btr, true);
+                    blockId = btr.ObjectId;
+                }
+
+                tr.Commit();
+            }
+
+            return blockId;
         }
 
         private static bool IsPointInsidePolyline(Point3d point, Polyline poly)
@@ -99,7 +159,8 @@ namespace Uno_Solar_Design_Assist_Pro
                 Point2d v1 = poly.GetPoint2dAt(i);
                 Point2d v2 = poly.GetPoint2dAt((i + 1) % poly.NumberOfVertices);
 
-                if (((v1.Y <= testPoint.Y) && (v2.Y > testPoint.Y)) || ((v2.Y <= testPoint.Y) && (v1.Y > testPoint.Y)))
+                if (((v1.Y <= testPoint.Y) && (v2.Y > testPoint.Y)) ||
+                    ((v2.Y <= testPoint.Y) && (v1.Y > testPoint.Y)))
                 {
                     double intersectX = (v2.X - v1.X) * (testPoint.Y - v1.Y) / (v2.Y - v1.Y) + v1.X;
                     if (intersectX > testPoint.X)
@@ -111,12 +172,7 @@ namespace Uno_Solar_Design_Assist_Pro
 
             return (intersectCount % 2) != 0;
         }
-
-        public bool CanExecute(object parameter)
-        {
-            return true;
-        }
-
-        public event EventHandler CanExecuteChanged;
     }
 }
+
+
