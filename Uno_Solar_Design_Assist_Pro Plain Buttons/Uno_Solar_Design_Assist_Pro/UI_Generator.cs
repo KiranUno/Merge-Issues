@@ -9,6 +9,7 @@ using Autodesk.AutoCAD.ApplicationServices;
 using RibbonPanelSource = Autodesk.Windows.RibbonPanelSource;
 using Autodesk.Windows;
 using System.Windows.Forms;
+using System.Windows.Input;
 
 namespace Uno_Solar_Design_Assist_Pro
 {
@@ -54,7 +55,7 @@ namespace Uno_Solar_Design_Assist_Pro
 
                 // Create a new RibbonButton
                 Autodesk.Windows.RibbonButton button = new Autodesk.Windows.RibbonButton();
-                button.Text = "\n\n Create Mesh \n\n";
+                button.Text = "Create Mesh";
                 button.ShowText = true;
                 button.CommandHandler = new Mesh_Creation();        // Add a click event handler for the button
                 rbnpnlsrc.Items.Add(button);                        // Add the RibbonButton to the RibbonPanel
@@ -62,14 +63,14 @@ namespace Uno_Solar_Design_Assist_Pro
 
                 // Create a new RibbonButton
                 Autodesk.Windows.RibbonButton button1 = new Autodesk.Windows.RibbonButton();
-                button1.Text = "\n\n Roads Placement \n\n";
+                button1.Text = "Place Roads";
                 button1.ShowText = true;
                 button1.CommandHandler = new Extents();    // Add a click event handler for the button
                 rbnpnlsrc.Items.Add(button1);                       // Add the RibbonButton to the RibbonPanel
                 rbnpnlsrc.Items.Add(separator);
 
                 Autodesk.Windows.RibbonButton button2 = new Autodesk.Windows.RibbonButton();
-                button2.Text = "\n\n Frames Placement \n\n";
+                button2.Text = "Place Frames";
                 button2.ShowText = true;
                 button2.CommandHandler = new Frames_Placement();
                 rbnpnlsrc.Items.Add(button2);
@@ -77,96 +78,118 @@ namespace Uno_Solar_Design_Assist_Pro
 
 
                 Autodesk.Windows.RibbonButton button2b = new Autodesk.Windows.RibbonButton();
-                button2b.Text = "\n\n Re-Arrange Frames \n\n";
+                button2b.Text = "Re-Arrange Frames";
                 button2b.ShowText = true;
                 button2b.CommandHandler = new Re_Arrange_Frames();
                 rbnpnlsrc.Items.Add(button2b);
                 rbnpnlsrc.Items.Add(separator);
 
                 Autodesk.Windows.RibbonButton button3 = new Autodesk.Windows.RibbonButton();
-                button3.Text = "\n\n Trench Lines Placement \n\n";
+                button3.Text = "Place Trenches";
                 button3.ShowText = true;
                 button3.CommandHandler = new Trench_Lines_Placement();
                 rbnpnlsrc.Items.Add(button3);
                 rbnpnlsrc.Items.Add(separator);
 
                 Autodesk.Windows.RibbonButton button4 = new Autodesk.Windows.RibbonButton();
-                button4.Text = "\n\n Light Arresters Placement \n\n";
+                button4.Text = "Place\nLightArrester";
                 button4.ShowText = true;
                 button4.CommandHandler = new Light_Arresters_Placement();
                 rbnpnlsrc.Items.Add(button4);
                 rbnpnlsrc.Items.Add(separator);
 
                 Autodesk.Windows.RibbonButton button5 = new Autodesk.Windows.RibbonButton();
-                button5.Text = "\n\n Modules Placement \n\n";
+                button5.Text = "Place Modules";
                 button5.ShowText = true;
                 button5.CommandHandler = new Cabling_Creation_DC();
                 rbnpnlsrc.Items.Add(button5);
                 rbnpnlsrc.Items.Add(separator);
 
                 RibbonButton button6 = new RibbonButton();
-                button6.Text = "\n\n Piles Placement \n\n";
+                button6.Text = "Place Piles";
                 button6.ShowText = true;
                 button6.CommandHandler = new Pile_Placement();
                 rbnpnlsrc.Items.Add(button6);
                 rbnpnlsrc.Items.Add(separator);
 
                 RibbonButton button7 = new RibbonButton();
-                button7.Text = "\n\n Piling Information \n\n";
+                button7.Text = "Piling Info";
                 button7.ShowText = true;
                 button7.CommandHandler = new Piles_Naming();
                 rbnpnlsrc.Items.Add(button7);
                 rbnpnlsrc.Items.Add(separator);
 
                 RibbonButton button8 = new RibbonButton();
-                button8.Text = "\n\n Table Information \n\n";
+                button8.Text = "Table Info";
                 button8.ShowText = true;
                 button8.CommandHandler = new Table_Naming();
                 rbnpnlsrc.Items.Add(button8);
                 rbnpnlsrc.Items.Add(separator);
 
                 RibbonButton button9 = new RibbonButton();
-                button9.Text = "\n\n Stringing \n\n";
+                button9.Text = "Stringing";
                 button9.ShowText = true;
                 button9.CommandHandler = new Stringing_Creation();
                 rbnpnlsrc.Items.Add(button9);
                 rbnpnlsrc.Items.Add(separator);
 
                 RibbonButton button10 = new RibbonButton();
-                button10.Text = "\n\n DC Cabling \n\n";
+                button10.Text = "DC Cabling";
                 button10.ShowText = true;
                 button10.CommandHandler = new Cabling_Creation_DC();
                 rbnpnlsrc.Items.Add(button10);
                 rbnpnlsrc.Items.Add(separator);
 
                 RibbonButton button11 = new RibbonButton();
-                button11.Text = "\n\n AC Cabling \n\n";
+                button11.Text = "AC Cabling";
                 button11.ShowText = true;
                 button11.CommandHandler = new Cabling_Creation_AC();
                 rbnpnlsrc.Items.Add(button11);
                 rbnpnlsrc.Items.Add(separator);
 
                 RibbonButton button12 = new RibbonButton();
-                button12.Text = "\n\n Pile Data Export \n\n";
+                button12.Text = "Pile Export";
                 button12.ShowText = true;
                 button12.CommandHandler = new Pile_Info_Export();
                 rbnpnlsrc.Items.Add(button12);
                 rbnpnlsrc.Items.Add(separator);
 
                 RibbonButton button13 = new RibbonButton();
-                button13.Text = "\n\n Cable Data Export \n\n";
+                button13.Text = "Cable Export";
                 button13.ShowText = true;
                 button13.CommandHandler = new Cable_Info_Export();
                 rbnpnlsrc.Items.Add(button13);
                 rbnpnlsrc.Items.Add(separator);
 
-
                 RibbonButton button14 = new RibbonButton();
-                button14.Text = "\n\n Shadow Analysis \n\n";
+                button14.Text = "Grounding";
                 button14.ShowText = true;
-                button14.CommandHandler = new Shadow_Analysis();
+                button14.CommandHandler = new Grounding_Creation();
                 rbnpnlsrc.Items.Add(button14);
                 rbnpnlsrc.Items.Add(separator);
+
+                RibbonButton button15 = new RibbonButton();
+                button15.Text = "GroundingStrips Length";
+                button15.ShowText = true;
+                button15.CommandHandler = new GroundingStripLengthData();
+                rbnpnlsrc.Items.Add(button15);
+                rbnpnlsrc.Items.Add(separator);
+
+                RibbonButton button16 = new RibbonButton();
+                button16.Text = "ZoomFunction";
+                button16.ShowText = true;
+                button16.CommandHandler = new ZoomFunction();
+                rbnpnlsrc.Items.Add(button16);
+                rbnpnlsrc.Items.Add(separator);
+
+                RibbonButton button17 = new RibbonButton();
+                button17.Text = "Shadow Analysis";
+                button17.ShowText = true;
+                button17.CommandHandler = new Shadow_Analysis();
+                rbnpnlsrc.Items.Add(button17);
+                rbnpnlsrc.Items.Add(separator);
+
+
             }
             catch (System.Exception ex)
             {
@@ -211,4 +234,6 @@ namespace Uno_Solar_Design_Assist_Pro
             }
         }
     }
+
+    
 }
