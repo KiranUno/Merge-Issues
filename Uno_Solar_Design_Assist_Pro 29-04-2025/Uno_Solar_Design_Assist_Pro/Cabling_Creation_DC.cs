@@ -7,6 +7,7 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.ApplicationServices;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
+using Autodesk.AutoCAD.Colors;
 
 namespace Uno_Solar_Design_Assist_Pro
 {
@@ -41,23 +42,34 @@ namespace Uno_Solar_Design_Assist_Pro
             using (DocumentLock doc_lock = doc.LockDocument())
             {
                 using (Transaction tr = db.TransactionManager.StartTransaction())
-                {
-                    LayerTable layerTable = tr.GetObject(db.LayerTableId, OpenMode.ForRead) as LayerTable;
+                {                    
 #region Get_Set_values
-                    string layerName = "Trench_Lines";
+                    string layerName = "UnoTEAM_DC CABELS";
+                    short lineWeight = (short)LineWeight.LineWeight000;
+                    Color layerColor = Color.FromRgb(0, 0, 255);        // Blue
 
-                    if (!layerTable.Has(layerName))
+                    LayerTable layerTable = tr.GetObject(db.LayerTableId, OpenMode.ForRead) as LayerTable;
+                    ObjectId layerId;
+
+                    if (layerTable.Has(layerName))
                     {
-                        // Upgrade to write and create new layer
+                        db.Clayer = layerTable[layerName];
+                    }
+                    else
+                    {
                         layerTable.UpgradeOpen();
+
                         LayerTableRecord newLayer = new LayerTableRecord
                         {
-                            Name = layerName
+                            Name = layerName,
+                            Color = layerColor,
+                            LineWeight = (LineWeight)lineWeight,
+                            LinetypeObjectId = db.ContinuousLinetype
                         };
-                        layerTable.Add(newLayer);
+
+                        layerId = layerTable.Add(newLayer);
                         tr.AddNewlyCreatedDBObject(newLayer, true);
                     }
-                    // Set the layer as current
                     db.Clayer = layerTable[layerName];
 
                     List<BlockReference> selectedBlocks = SelectBlocks(ed, tr);
@@ -427,7 +439,7 @@ namespace Uno_Solar_Design_Assist_Pro
             Database db = doc.Database;
             Editor ed = doc.Editor;
 
-            string layerName = "Trench_Lines";
+            string layerName = "UnoTEAM_TRENCHES";
             List<Line> Trench_Lines = new List<Line>();
             Point3dCollection Trench_points = new Point3dCollection();
 

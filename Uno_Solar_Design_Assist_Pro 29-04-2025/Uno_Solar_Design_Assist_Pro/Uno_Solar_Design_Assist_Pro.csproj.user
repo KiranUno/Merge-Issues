@@ -8,6 +8,9 @@
     <Compile Update="Frames.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Update="Shadow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Update="Stringing.cs">
       <SubType>Form</SubType>
     </Compile>

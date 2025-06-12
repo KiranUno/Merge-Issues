@@ -145,6 +145,7 @@
             Controls.Add(radioButton1);
             Name = "Trenches";
             Text = "Trenches";
+            Load += Trenches_Load;
             ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
             ResumeLayout(false);
             PerformLayout();
