@@ -32,7 +32,7 @@ namespace Uno_Solar_Design_Assist_Pro
                 string linetypeName = "400mm_45Degree";
                 string linetypeFilePath = @"C:\ProgramData\Autodesk\ApplicationPlugins\UnoTeams\Line Types\400mm_45Degree.lin";
                 string layerName = "UnoTEAM_2AC CABEL TRENCH";
-
+                Messagebox.show("Started");
                 try
                 {
                     doc.LockDocument();
